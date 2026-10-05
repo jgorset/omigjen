@@ -1,0 +1,168 @@
+import { test, expect, type Page } from '@playwright/test';
+import path from 'node:path';
+
+async function ready(page: Page) {
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Spill', exact: true })).toBeEnabled();
+}
+async function setTime(page: Page, label: string, time: string) {
+  const field = page.getByRole('textbox', { name: label, exact: true });
+  await field.fill(time); await field.press('Tab');
+}
+
+test('demo really plays, preserves pitch, changes speed and repeats the selected audio', async ({ page }) => {
+  const errors: string[] = []; page.on('pageerror', e => errors.push(e.message));
+  await ready(page);
+  await expect(page.locator('#duration')).toHaveText('0:32');
+  await page.getByRole('button', { name: '75 %', exact: true }).click();
+  expect(await page.locator('audio').evaluate((el: HTMLAudioElement) => [el.playbackRate, el.preservesPitch])).toEqual([0.75, true]);
+  await setTime(page, 'Sluttid', '0:01.2');
+  await setTime(page, 'Starttid', '0:00.3');
+  await page.getByRole('button', { name: 'Spill', exact: true }).click();
+  await expect.poll(() => page.locator('audio').evaluate((el: HTMLAudioElement) => el.currentTime)).toBeGreaterThan(0.3);
+  await expect(page.locator('#rounds')).not.toHaveText('0 runder', { timeout: 5000 });
+  const position = await page.locator('audio').evaluate((el: HTMLAudioElement) => el.currentTime);
+  expect(position).toBeGreaterThanOrEqual(0.25); expect(position).toBeLessThan(1.3);
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  expect(await page.locator('audio').evaluate((el: HTMLAudioElement) => el.paused)).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test('saved phrases restore after reload, keep names as text, and can be deleted', async ({ page }) => {
+  await ready(page);
+  await setTime(page, 'Sluttid', '0:04.5');
+  await page.getByRole('button', { name: '50 %', exact: true }).click();
+  await page.getByRole('button', { name: 'Lagre valgt parti' }).click();
+  await page.getByRole('textbox', { name: 'Navn på øvepartiet' }).fill('Andre veket <img src=x>');
+  await page.getByRole('button', { name: 'Lagre øveparti', exact: true }).click();
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Spill', exact: true })).toBeEnabled();
+  const phrase = page.locator('.phrase-button').filter({ hasText: 'Andre veket <img src=x>' });
+  await expect(phrase).toBeVisible();
+  await phrase.click();
+  await expect(page.locator('#speed-value')).toHaveText('50%');
+  await expect(page.getByRole('textbox', { name: 'Sluttid', exact: true })).toHaveValue('0:04.5');
+  await expect(page.locator('#phrase-list img')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Slett Andre veket <img src=x>', exact: true }).click();
+  await page.reload();
+  await expect(phrase).toHaveCount(0);
+});
+
+test('pausing during the rest cancels restart, and changing source clears pending audio', async ({ page }) => {
+  await ready(page);
+  await setTime(page, 'Sluttid', '0:00.4');
+  await page.getByLabel('Pusterom mellom rundene').selectOption('1');
+  await page.getByRole('button', { name: 'Spill', exact: true }).click();
+  await expect(page.locator('#playback-status')).toContainText('Pusterom');
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  await page.waitForTimeout(1250);
+  expect(await page.locator('audio').evaluate((el: HTMLAudioElement) => el.paused)).toBe(true);
+  await expect(page.getByRole('button', { name: 'Spill', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Spill', exact: true }).click();
+  await expect(page.locator('#playback-status')).toContainText('Pusterom');
+  await page.getByRole('button', { name: 'Åpne en låt' }).click();
+  await page.locator('#audio-file').setInputFiles(path.resolve('public/ovingsmelodi.wav'));
+  await expect(page.getByRole('heading', { name: 'ovingsmelodi', exact: true })).toBeVisible();
+  await page.waitForTimeout(1250);
+  expect(await page.locator('audio').evaluate((el: HTMLAudioElement) => el.paused)).toBe(true);
+  await expect(page.locator('#phrase-count')).toHaveText('0');
+});
+
+test('input validation, marker keyboard access and source dialog work on mobile', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await ready(page);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.locator('#end-handle').focus();
+  await page.keyboard.press('ArrowLeft');
+  await expect(page.getByRole('textbox', { name: 'Sluttid', exact: true })).toHaveValue('0:07.9');
+  await setTime(page, 'Starttid', '0:10');
+  await expect(page.locator('#message')).toContainText('Slutten må');
+  await expect(page.getByRole('textbox', { name: 'Starttid', exact: true })).toHaveValue('0:00.0');
+  await page.getByRole('button', { name: 'Åpne en låt' }).click();
+  await page.getByRole('textbox', { name: 'YouTube-lenke' }).fill('https://youtube.com.evil.example/watch?v=M7lc1UVf-VE');
+  await page.getByRole('button', { name: 'Åpne', exact: true }).click();
+  await expect(page.locator('#source-error')).toBeVisible();
+  await expect(page.locator('iframe')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#source-dialog')).not.toBeVisible();
+  await page.screenshot({ path: 'test-results/mobile.png', fullPage: true });
+});
+
+test('desktop layout and upload failure recover without a reload', async ({ page }) => {
+  await ready(page);
+  await expect(page.locator('#waveform')).toBeVisible();
+  await page.screenshot({ path: 'test-results/desktop.png', fullPage: true });
+  await page.getByRole('button', { name: 'Åpne en låt' }).click();
+  await page.locator('#audio-file').setInputFiles({ name: 'broken.mp3', mimeType: 'audio/mpeg', buffer: Buffer.from('not audio') });
+  await expect(page.locator('#message')).toContainText(/kunne ikke/);
+  await expect(page.getByRole('button', { name: 'Spill', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Åpne en låt' }).click();
+  await page.getByRole('button', { name: 'Prøv med øvingsmelodien' }).click();
+  await expect(page.getByRole('button', { name: 'Spill', exact: true })).toBeEnabled();
+});
+
+test('zooming makes a small phrase editable without changing its playback boundaries', async ({ page }) => {
+  await ready(page);
+  await setTime(page, 'Starttid', '0:03');
+  await setTime(page, 'Sluttid', '0:03.5');
+  await page.getByRole('button', { name: 'Forstørr parti' }).click();
+  await expect(page.getByRole('button', { name: 'Hele låten', exact: true })).toBeVisible();
+  await expect(page.locator('#seek')).toHaveAttribute('min', '2.5');
+  await expect(page.locator('#seek')).toHaveAttribute('max', '4');
+  await expect(page.getByRole('textbox', { name: 'Starttid', exact: true })).toHaveValue('0:03.0');
+  await page.locator('#end-handle').focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByRole('textbox', { name: 'Sluttid', exact: true })).toHaveValue('0:03.6');
+  await page.getByRole('button', { name: 'Hele låten', exact: true }).click();
+  await expect(page.locator('#seek')).toHaveAttribute('max', '32');
+  const handle = await page.locator('#end-handle').boundingBox();
+  const timeline = await page.locator('#timeline').boundingBox();
+  expect(handle).not.toBeNull(); expect(timeline).not.toBeNull();
+  await page.mouse.move(handle!.x + handle!.width / 2, handle!.y + 30);
+  await page.mouse.down();
+  await page.mouse.move(timeline!.x + timeline!.width / 2, handle!.y + 30, { steps: 8 });
+  await page.mouse.up();
+  await expect(page.getByRole('textbox', { name: 'Sluttid', exact: true })).toHaveValue('0:16.0');
+});
+
+test('YouTube adapter respects confirmed speeds and rejects unavailable videos', async ({ page }) => {
+  // Contract test, not evidence of live YouTube playback. The real provider is also checked manually.
+  await page.route('https://www.youtube.com/iframe_api', route => route.fulfill({
+    contentType: 'text/javascript',
+    body: `window.YT = { Player: class {
+      constructor(el, options) {
+        this.options = options; this.time = 0; this.rate = 1;
+        const iframe = document.createElement('iframe'); iframe.title = 'Test video'; el.replaceWith(iframe); this.element = iframe;
+        setTimeout(() => {
+          options.events.onReady({target:this});
+          if(options.videoId === 'xxxxxxxxxxx') options.events.onError({target:this,data:150});
+        }, 50);
+      }
+      getDuration(){return 180;}
+      getCurrentTime(){return this.time;}
+      getVideoData(){return {title:'Testopptak fra YouTube'};}
+      getAvailablePlaybackRates(){return [0.5,1,1.5];}
+      getPlaybackRate(){return this.rate;}
+      setVolume(){}
+      setPlaybackRate(rate){this.rate=rate;this.options.events.onPlaybackRateChange({target:this,data:rate});}
+      playVideo(){this.options.events.onStateChange({target:this,data:1});}
+      pauseVideo(){this.options.events.onStateChange({target:this,data:2});}
+      seekTo(time){this.time=time;}
+      destroy(){this.element.remove();}
+    }}; window.onYouTubeIframeAPIReady();`,
+  }));
+  await ready(page);
+  await page.getByRole('button', { name: 'Åpne en låt' }).click();
+  await page.getByRole('textbox', { name: 'YouTube-lenke' }).fill('https://youtu.be/M7lc1UVf-VE');
+  await page.getByRole('button', { name: 'Åpne', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Testopptak fra YouTube' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '75 %', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: '50 %', exact: true }).click();
+  await expect(page.locator('#speed-value')).toHaveText('50%');
+  await expect(page.getByRole('button', { name: 'Hele låten', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Åpne en låt' }).click();
+  await page.getByRole('textbox', { name: 'YouTube-lenke' }).fill('https://youtu.be/xxxxxxxxxxx');
+  await page.getByRole('button', { name: 'Åpne', exact: true }).click();
+  await expect(page.locator('#message')).toContainText('Eieren tillater ikke');
+  await expect(page.getByRole('button', { name: 'Spill', exact: true })).toBeDisabled();
+});
