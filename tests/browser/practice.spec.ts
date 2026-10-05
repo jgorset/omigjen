@@ -10,6 +10,60 @@ async function setTime(page: Page, label: string, time: string) {
   await field.fill(time); await field.press('Tab');
 }
 
+test('practice shortcuts keep working after button clicks without taking over text entry', async ({ page }) => {
+  await ready(page);
+  await page.getByRole('button', { name: '75 %', exact: true }).click();
+  await page.keyboard.press('Space');
+  await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+  await page.keyboard.press('l');
+  await expect(page.getByRole('checkbox', { name: 'Spill i løkke', exact: true })).not.toBeChecked();
+  await page.keyboard.press('Space');
+  await expect(page.getByRole('button', { name: 'Spill', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Lagre valgt parti' }).click();
+  const name = page.getByRole('textbox', { name: 'Navn på øvepartiet' });
+  await name.pressSequentially('Ballade A B');
+  await expect(name).toHaveValue('Ballade A B');
+  expect(await page.locator('audio').evaluate((el: HTMLAudioElement) => el.paused)).toBe(true);
+});
+
+test('marking at the playhead can select a new phrase beyond either old boundary', async ({ page }) => {
+  await ready(page);
+  await page.locator('audio').evaluate((el: HTMLAudioElement) => { el.currentTime = 20; });
+  await page.getByRole('button', { name: 'Sett A her' }).click();
+  await expect(page.getByRole('textbox', { name: 'Starttid', exact: true })).toHaveValue('0:20.0');
+  await expect(page.getByRole('textbox', { name: 'Sluttid', exact: true })).toHaveValue('0:28.0');
+  await page.locator('audio').evaluate((el: HTMLAudioElement) => { el.currentTime = 5; });
+  await page.keyboard.press('b');
+  await expect(page.getByRole('textbox', { name: 'Starttid', exact: true })).toHaveValue('0:00.0');
+  await expect(page.getByRole('textbox', { name: 'Sluttid', exact: true })).toHaveValue('0:05.0');
+  await page.locator('audio').evaluate((el: HTMLAudioElement) => { el.currentTime = 32; });
+  await page.keyboard.press('a');
+  await expect(page.getByRole('textbox', { name: 'Starttid', exact: true })).toHaveValue('0:31.8');
+  await expect(page.getByRole('textbox', { name: 'Sluttid', exact: true })).toHaveValue('0:32.0');
+});
+
+test('a late failure from a replaced audio source does not stop the current player', async ({ page }) => {
+  await page.addInitScript(() => {
+    const original = HTMLMediaElement.prototype.play;
+    let first = true;
+    HTMLMediaElement.prototype.play = function () {
+      if (!first) return original.call(this);
+      first = false;
+      return new Promise((_, reject) => setTimeout(() => reject(new DOMException('Old source interrupted', 'AbortError')), 1500));
+    };
+  });
+  await ready(page);
+  await page.getByRole('button', { name: 'Spill', exact: true }).click();
+  await page.getByRole('button', { name: 'Åpne en låt' }).click();
+  await page.locator('#audio-file').setInputFiles(path.resolve('public/ovingsmelodi.wav'));
+  await expect(page.getByRole('button', { name: 'Spill', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Spill', exact: true }).click();
+  await page.waitForTimeout(1700);
+  expect(await page.locator('audio').evaluate((el: HTMLAudioElement) => el.paused)).toBe(false);
+  await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+  await expect(page.locator('#message')).toBeHidden();
+});
+
 test('demo really plays, preserves pitch, changes speed and repeats the selected audio', async ({ page }) => {
   const errors: string[] = []; page.on('pageerror', e => errors.push(e.message));
   await ready(page);

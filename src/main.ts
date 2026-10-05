@@ -109,6 +109,7 @@ let end = 8;
 let speed = 1;
 let rates = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 let playing = false;
+let playRequest = 0;
 let ready = false;
 let looping = true;
 let rounds = 0;
@@ -147,6 +148,7 @@ function setPlaying(value: boolean) {
   document.body.classList.toggle('is-playing', value);
 }
 function pause() {
+  playRequest++;
   cancelGap();
   if (source === 'file') audio.pause(); else player?.pauseVideo?.();
   setPlaying(false);
@@ -154,12 +156,16 @@ function pause() {
 }
 async function play() {
   if (!ready) return;
+  const request = ++playRequest;
   cancelGap();
   if (looping && (currentTime() < start || currentTime() >= end - 0.03)) seek(start);
   else if (!looping && currentTime() >= duration - 0.03) seek(0);
   try {
     if (source === 'file') await audio.play(); else player?.playVideo();
-  } catch { setPlaying(false); message('Avspillingen kunne ikke starte. Trykk på spill for å prøve igjen.'); }
+  } catch (error) {
+    if (request !== playRequest || (error instanceof DOMException && error.name === 'AbortError')) return;
+    setPlaying(false); message('Avspillingen kunne ikke starte. Trykk på spill for å prøve igjen.');
+  }
 }
 function seek(time: number) {
   if (!ready) return;
@@ -261,6 +267,14 @@ function setBoundary(which: 'start' | 'end', value: number) {
   if (playing && looping && (currentTime() < start || currentTime() >= end)) { seek(start); void play(); }
   else if (wasWaiting) void play();
   renderTimeline(); renderPhrases();
+}
+function markBoundary(which: 'start' | 'end') {
+  if (!ready) return;
+  const value = clamp(currentTime(), which === 'end' ? MIN_LOOP : 0, which === 'start' ? duration - MIN_LOOP : duration);
+  const length = end - start;
+  if (which === 'start' && value > end - MIN_LOOP) end = Math.min(duration, value + length);
+  if (which === 'end' && value < start + MIN_LOOP) start = Math.max(0, value - length);
+  setBoundary(which, value);
 }
 function setLoop(value: boolean) {
   looping = value; loopToggle.checked = value;
@@ -468,8 +482,8 @@ for (const [id, direction] of [['slower', -1], ['faster', 1]] as const) {
 }
 loopToggle.addEventListener('change', () => setLoop(loopToggle.checked));
 $<HTMLSelectElement>('gap').addEventListener('change', event => { gap = Number((event.target as HTMLSelectElement).value); if (gapTimer !== null) { cancelGap(); seek(start); void play(); } });
-$('mark-start').addEventListener('click', () => setBoundary('start', currentTime()));
-$('mark-end').addEventListener('click', () => setBoundary('end', currentTime()));
+$('mark-start').addEventListener('click', () => markBoundary('start'));
+$('mark-end').addEventListener('click', () => markBoundary('end'));
 for (const which of ['start', 'end'] as const) {
   const input = $<HTMLInputElement>(`loop-${which}`);
   input.addEventListener('change', () => {
@@ -527,13 +541,16 @@ $('save-form').addEventListener('submit', event => {
 document.addEventListener('keydown', event => {
   if (event.altKey || event.ctrlKey || event.metaKey || document.querySelector('dialog[open]')) return;
   const target = event.target as HTMLElement;
-  if (target.closest('input, select, textarea, button, [role="slider"], [contenteditable="true"]')) return;
+  if (target.closest('input:not([type="range"]):not([type="checkbox"]), select, textarea, [contenteditable]:not([contenteditable="false"])')) return;
   if (!ready) return;
-  if (event.code === 'Space') { event.preventDefault(); togglePlay(); }
-  else if (event.key.toLowerCase() === 'a') setBoundary('start', currentTime());
-  else if (event.key.toLowerCase() === 'b') setBoundary('end', currentTime());
-  else if (event.key.toLowerCase() === 'l') setLoop(!looping);
-  else if (['ArrowLeft', 'ArrowRight'].includes(event.key)) { event.preventDefault(); seek(currentTime() + (event.key === 'ArrowLeft' ? -2 : 2)); }
+  if (event.code === 'Space') {
+    if (target.matches('input[type="checkbox"]')) return;
+    event.preventDefault(); if (!event.repeat) togglePlay();
+  }
+  else if (event.key.toLowerCase() === 'a' && !event.repeat) markBoundary('start');
+  else if (event.key.toLowerCase() === 'b' && !event.repeat) markBoundary('end');
+  else if (event.key.toLowerCase() === 'l' && !event.repeat) setLoop(!looping);
+  else if (['ArrowLeft', 'ArrowRight'].includes(event.key) && !target.closest('input, [role="slider"]')) { event.preventDefault(); seek(currentTime() + (event.key === 'ArrowLeft' ? -2 : 2)); }
 });
 setInterval(() => {
   if (!ready) return;

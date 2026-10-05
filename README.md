@@ -17,12 +17,13 @@ npm.cmd run dev
 
 - Trykk **Åpne en låt** for en YouTube-lenke eller en lokal lydfil. Den innebygde, syntetiske øvingsmelodien er klar ved oppstart.
 - Flytt **A** og **B**, eller skriv inn start og slutt som `0:12.5`. Minste parti er 0,25 sekunder.
+- **Sett A her** og **Sett B her** følger spilleposisjonen. Ligger den utenfor det gamle partiet, flyttes den andre grensen ved behov, slik at du kan velge en ny frase senere eller tidligere i opptaket.
 - **Forstørr parti** gjør korte fraser enklere å markere. **Hele låten** viser hele opptaket. Opptak over 90 sekunder åpnes med partiet forstørret.
 - Endre **Tempo**. Lokale filer bruker nettleserens tonehøydebevaring. YouTube viser bare hastigheter videoen støtter, og oppdaterer tempoet når tjenesten bekrefter endringen.
 - Velg et **pusterom** mellom rundene. Pause eller bytte av låt avbryter en ventende runde.
 - **Lagre valgt parti** tar vare på navn, start, slutt og tempo. Velg et lagret parti for å spille det i løkke.
 
-Mellomrom spiller eller pauser. A og B setter markører ved spilleposisjonen. L slår løkka av eller på. Piltastene spoler to sekunder. En fokusert A/B-markør flyttes 0,1 sekund med piltastene, eller ett sekund med Shift. Snarveiene overtar ikke inntasting i skjemaer eller dialoger.
+Mellomrom spiller eller pauser, også etter et klikk på en tempoknapp. A og B setter markører ved spilleposisjonen. L slår løkka av eller på. Piltastene spoler to sekunder. En fokusert A/B-markør flyttes 0,1 sekund med piltastene, eller ett sekund med Shift. Slidere beholder vanlig piltaststyring, og mellomrom veksler en fokusert avkrysningsboks. Snarveiene overtar ikke tekstinntasting eller dialoger.
 
 ## Lydkilder og lagring
 
