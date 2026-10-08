@@ -4,6 +4,7 @@ import { clamp, formatTime, MIN_LOOP, parseTime, readPhrases, waveformPeaks, you
 import { saveSession, getSession, listSessions, deleteSession, type PracticeSession } from './sessions';
 
 const icon = (name: string) => `<i class="ph ph-${name}" aria-hidden="true"></i>`;
+const localDownloads = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
   <header class="site-header">
     <a class="wordmark" href="./" aria-label="Omigjen, ditt øverom">${icon('arrows-clockwise')}omigjen<span class="brand-period">.</span></a>
@@ -75,13 +76,13 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
   <dialog class="modal" id="source-dialog">
     <div class="modal-box source-modal">
       <div class="dialog-heading"><span class="eyebrow">FINN NOE Å ØVE PÅ</span><button class="btn close-dialog" aria-label="Lukk" data-close="source-dialog">${icon('x')}</button></div>
-      <h2>Din neste låt.</h2><p>Lim inn en YouTube-lenke, eller åpne en lydfil.</p>
-      <form id="youtube-form"><label for="youtube-url">YouTube-lenke</label><div class="url-row"><input class="input" id="youtube-url" type="url" placeholder="https://www.youtube.com/watch?v=…" required /><button class="btn" id="youtube-download" type="submit">Hent lyd ${icon('download-simple')}</button></div><p class="source-disclosure">Lyden hentes én gang og lagres på denne enheten for senere øving.</p><div id="download-progress" hidden><p class="source-disclosure" role="status">Henter lyd … Første gang kan det ta litt tid.</p><button class="btn btn-sm btn-ghost" id="download-cancel" type="button">Avbryt</button></div><p class="form-error" id="source-error" role="alert" hidden></p></form>
-      <div class="or-divider"><span>eller fra enheten din</span></div>
+      <h2>Din neste låt.</h2><p>${localDownloads ? 'Lim inn en YouTube-lenke, eller åpne en lydfil.' : 'Åpne en lydfil fra enheten din.'}</p>
+      <form id="youtube-form" ${localDownloads ? '' : 'hidden'}><label for="youtube-url">YouTube-lenke</label><div class="url-row"><input class="input" id="youtube-url" type="url" placeholder="https://www.youtube.com/watch?v=…" required /><button class="btn" id="youtube-download" type="submit">Hent lyd ${icon('download-simple')}</button></div><p class="source-disclosure">Lyden hentes én gang og lagres på denne enheten for senere øving.</p><div id="download-progress" hidden><p class="source-disclosure" role="status">Henter lyd … Første gang kan det ta litt tid.</p><button class="btn btn-sm btn-ghost" id="download-cancel" type="button">Avbryt</button></div><p class="form-error" id="source-error" role="alert" hidden></p></form>
+      <div class="or-divider" ${localDownloads ? '' : 'hidden'}><span>eller fra enheten din</span></div>
       <label class="file-drop" id="file-drop" for="audio-file">${icon('upload-simple')}<strong>Velg en lydfil</strong><span>eller slipp den her</span><small>MP3, WAV, M4A, OGG og FLAC hvis nettleseren støtter det</small><input id="audio-file" type="file" accept="audio/*,.m4a,.flac,.ogg,.wav,.mp3" /></label>
       <p class="file-privacy">${icon('lock-simple')} Lydfilen blir på enheten din.</p>
       <button class="btn demo-button" id="load-demo">${icon('music-notes-simple')} Prøv med øvingsmelodien</button>
-      <details class="source-details"><summary>Hva med Spotify?</summary><p>Spotify tilbyr ikke tempojustering gjennom avspillingsverktøyene sine. Bruk en YouTube-versjon eller en lydfil du har tilgang til.</p></details>
+      <details class="source-details"><summary>Hva med Spotify?</summary><p>Spotify tilbyr ikke tempojustering gjennom avspillingsverktøyene sine. Bruk en lydfil du har tilgang til.</p></details>
     </div><form method="dialog" class="modal-backdrop"><button>Lukk</button></form>
   </dialog>
   <dialog class="modal" id="save-dialog"><div class="modal-box"><div class="dialog-heading"><span class="eyebrow">TA VARE PÅ ET PARTI</span><button class="btn close-dialog" data-close="save-dialog" aria-label="Lukk">${icon('x')}</button></div><h2>Lett å finne igjen.</h2><p id="save-description"></p><form id="save-form"><label for="phrase-name">Navn på øvepartiet</label><input class="input" id="phrase-name" maxlength="80" required placeholder="For eksempel: Andre veket" /><button class="btn save-confirm" type="submit">Lagre øveparti ${icon('check')}</button></form></div><form method="dialog" class="modal-backdrop"><button>Lukk</button></form></dialog>
@@ -562,6 +563,7 @@ $('help-open').addEventListener('click', () => $<HTMLDialogElement>('help-dialog
 document.querySelectorAll<HTMLButtonElement>('[data-close]').forEach(button => button.addEventListener('click', () => $<HTMLDialogElement>(button.dataset.close!).close()));
 $('youtube-form').addEventListener('submit', event => {
   event.preventDefault();
+  if (!localDownloads) return;
   const id = youtubeId($<HTMLInputElement>('youtube-url').value);
   if (!id) { $('source-error').textContent = 'Bruk en lenke til en YouTube-video. Spotify og spillelister støttes ikke her.'; $('source-error').hidden = false; return; }
   void downloadYoutube(id);
