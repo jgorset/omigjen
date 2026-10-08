@@ -4,7 +4,7 @@ A little practice room for learning tunes by ear. Slow them down, loop the diffi
 
 [Try it](https://omigjen.johannesgorset.com).
 
-![Omigjen in a browser, with a waveform, tempo controls, and saved practice phrases](docs/screenshot-framed.png)
+![Omigjen in a browser, with a waveform, tempo controls, and saved practice phrases](docs/screenshot-browser.png)
 
 Open an audio file, mark a phrase with A and B, and play along. Audio and saved sessions stay in your browser.
 
