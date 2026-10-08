@@ -13,14 +13,20 @@ async function mockAudio(page: Page) {
 }
 
 test('downloaded audio plays locally, preserves pitch, loops, and restores YouTube phrases', async ({ page }) => {
+  const youtubeRequests: string[] = [];
+  page.on('request', request => { if (/^https:\/\/(?:www\.)?youtube\.com\//.test(request.url())) youtubeRequests.push(request.url()); });
   await page.addInitScript(({ id }) => localStorage.setItem(`omigjen:phrases:yt:${id}`, JSON.stringify([{ id: 'saved', name: 'Gammelt øveparti', start: 0.3, end: 1.2, speed: 0.75 }])), { id });
   await page.route('**/api/youtube-audio', route => route.fulfill({ json: info }));
   await mockAudio(page);
   await page.goto('/');
+  await page.getByRole('button', { name: 'Åpne en låt' }).click();
+  await expect(page.getByRole('button', { name: 'Spill fra YouTube', exact: true })).toHaveCount(0);
+  await page.keyboard.press('Escape');
   await openDownload(page);
   await expect(page.getByRole('heading', { name: info.title })).toBeVisible();
   await expect(page.locator('#song-meta')).toContainText('Lagret på denne enheten');
   await expect(page.locator('iframe')).toHaveCount(0);
+  expect(youtubeRequests).toEqual([]);
   await expect(page.getByRole('button', { name: 'Spill', exact: true })).toBeEnabled();
   await page.locator('.phrase-button').filter({ hasText: 'Gammelt øveparti' }).click();
   expect(await page.locator('audio').evaluate((el: HTMLAudioElement) => [el.playbackRate, el.preservesPitch, el.src.startsWith('blob:')])).toEqual([0.75, true, true]);
