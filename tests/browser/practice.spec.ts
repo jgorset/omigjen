@@ -134,7 +134,7 @@ test('input validation, marker keyboard access and source dialog work on mobile'
   await expect(page.getByRole('textbox', { name: 'Starttid', exact: true })).toHaveValue('0:00.0');
   await page.getByRole('button', { name: 'Åpne en låt' }).click();
   await page.getByRole('textbox', { name: 'YouTube-lenke' }).fill('https://youtube.com.evil.example/watch?v=M7lc1UVf-VE');
-  await page.getByRole('button', { name: 'Åpne', exact: true }).click();
+  await page.getByRole('button', { name: 'Hent lyd', exact: true }).click();
   await expect(page.locator('#source-error')).toBeVisible();
   await expect(page.locator('iframe')).toHaveCount(0);
   await page.keyboard.press('Escape');
@@ -208,7 +208,7 @@ test('YouTube adapter respects confirmed speeds and rejects unavailable videos',
   await ready(page);
   await page.getByRole('button', { name: 'Åpne en låt' }).click();
   await page.getByRole('textbox', { name: 'YouTube-lenke' }).fill('https://youtu.be/M7lc1UVf-VE');
-  await page.getByRole('button', { name: 'Åpne', exact: true }).click();
+  await page.getByRole('button', { name: 'Spill fra YouTube', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Testopptak fra YouTube' })).toBeVisible();
   await expect(page.getByRole('button', { name: '75 %', exact: true })).toBeDisabled();
   await page.getByRole('button', { name: '50 %', exact: true }).click();
@@ -216,7 +216,7 @@ test('YouTube adapter respects confirmed speeds and rejects unavailable videos',
   await expect(page.getByRole('button', { name: 'Hele låten', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Åpne en låt' }).click();
   await page.getByRole('textbox', { name: 'YouTube-lenke' }).fill('https://youtu.be/xxxxxxxxxxx');
-  await page.getByRole('button', { name: 'Åpne', exact: true }).click();
+  await page.getByRole('button', { name: 'Spill fra YouTube', exact: true }).click();
   await expect(page.locator('#message')).toContainText('Eieren tillater ikke');
   await expect(page.getByRole('button', { name: 'Spill', exact: true })).toBeDisabled();
 });

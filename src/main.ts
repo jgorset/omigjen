@@ -77,7 +77,7 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
     <div class="modal-box source-modal">
       <div class="dialog-heading"><span class="eyebrow">FINN NOE Å ØVE PÅ</span><button class="btn close-dialog" aria-label="Lukk" data-close="source-dialog">${icon('x')}</button></div>
       <h2>Din neste låt.</h2><p>Lim inn en YouTube-lenke, eller åpne en lydfil.</p>
-      <form id="youtube-form"><label for="youtube-url">YouTube-lenke</label><div class="url-row"><input class="input" id="youtube-url" type="url" placeholder="https://www.youtube.com/watch?v=…" required /><button class="btn" type="submit">Åpne ${icon('arrow-up-right')}</button></div><p class="source-disclosure">Videoen spilles fra YouTube når du åpner lenken.</p><p class="form-error" id="source-error" role="alert" hidden></p></form>
+      <form id="youtube-form"><label for="youtube-url">YouTube-lenke</label><div class="url-row"><input class="input" id="youtube-url" type="url" placeholder="https://www.youtube.com/watch?v=…" required /><button class="btn" id="youtube-download" type="submit">Hent lyd ${icon('download-simple')}</button></div><p class="source-disclosure">Lyden hentes én gang og lagres på denne enheten for senere øving.</p><div id="download-progress" hidden><p class="source-disclosure" role="status">Henter lyd … Første gang kan det ta litt tid.</p><button class="btn btn-sm btn-ghost" id="download-cancel" type="button">Avbryt</button></div><button class="btn btn-sm btn-ghost" id="youtube-stream" type="button">Spill fra YouTube ${icon('arrow-up-right')}</button><p class="form-error" id="source-error" role="alert" hidden></p></form>
       <div class="or-divider"><span>eller fra enheten din</span></div>
       <label class="file-drop" id="file-drop" for="audio-file">${icon('upload-simple')}<strong>Velg en lydfil</strong><span>eller slipp den her</span><small>MP3, WAV, M4A, OGG og FLAC hvis nettleseren støtter det</small><input id="audio-file" type="file" accept="audio/*,.m4a,.flac,.ogg,.wav,.mp3" /></label>
       <p class="file-privacy">${icon('lock-simple')} Lydfilen blir på enheten din.</p>
@@ -121,6 +121,14 @@ let peaks: number[] = [];
 let phrases: Phrase[] = [];
 let activePhrase: string | null = null;
 let ytReadyTimeout: ReturnType<typeof setTimeout> | null = null;
+let downloadRequest: AbortController | null = null;
+
+function cancelDownload() {
+  downloadRequest?.abort(); downloadRequest = null;
+  $<HTMLButtonElement>('youtube-download').disabled = false;
+  $('youtube-download').innerHTML = `Hent lyd ${icon('download-simple')}`;
+  $('download-progress').hidden = true;
+}
 
 function message(text: string) { $('message').textContent = text; $('message').hidden = !text; }
 function status(text: string) { if ($('playback-status').textContent !== text) $('playback-status').textContent = text; }
@@ -339,6 +347,7 @@ function renderPhrases() {
   }
 }
 function resetSource(kind: 'file' | 'youtube', key: string, title: string, meta: string) {
+  cancelDownload();
   pause(); setReady(false); sourceVersion++;
   player?.destroy(); player = null;
   if (ytReadyTimeout) clearTimeout(ytReadyTimeout);
@@ -385,13 +394,13 @@ async function decodeWaveform(blob: Blob, version: number) {
     if (version === sourceVersion) { $('timeline-label').textContent = 'TIDSLINJE'; message('Lydbildet kunne ikke leses. Du kan fortsatt øve hvis nettleseren kan spille filen.'); }
   } finally { if (context) await context.close(); }
 }
-async function openFile(file?: File) {
+async function openFile(file?: File, youtube?: { id: string; title: string }) {
   if (file && file.size === 0) { $('source-error').textContent = 'Filen er tom. Velg et lydopptak.'; $('source-error').hidden = false; return; }
   if (file && !file.type.startsWith('audio/') && !/\.(mp3|wav|m4a|aac|ogg|flac|opus|aiff?|webm)$/i.test(file.name)) {
     $('source-error').textContent = 'Velg en lydfil, for eksempel MP3, WAV eller M4A.'; $('source-error').hidden = false; return;
   }
-  const key = file ? `${file.name}:${file.size}:${file.lastModified}` : 'demo';
-  const version = resetSource('file', key, file ? file.name.replace(/\.[^.]+$/, '') : 'En liten runddans', file ? 'Lydfil · På denne enheten' : 'Innebygd demo · Syntetisk øvingsmelodi');
+  const key = youtube ? `yt:${youtube.id}` : file ? `${file.name}:${file.size}:${file.lastModified}` : 'demo';
+  const version = resetSource('file', key, youtube ? youtube.title : file ? file.name.replace(/\.[^.]+$/, '') : 'En liten runddans', youtube ? 'YouTube-lyd · Lagret på denne enheten' : file ? 'Lydfil · På denne enheten' : 'Innebygd demo · Syntetisk øvingsmelodi');
   $<HTMLDialogElement>('source-dialog').close();
   audio.preservesPitch = true;
   audio.volume = Number($<HTMLInputElement>('volume').value) / 100;
@@ -403,6 +412,33 @@ async function openFile(file?: File) {
     catch { if (version === sourceVersion) message('Øvingsmelodien kunne ikke lastes. Prøv å åpne en egen lydfil.'); }
   }
   if (version === sourceVersion) audio.load();
+}
+async function downloadYoutube(id: string) {
+  cancelDownload(); pause();
+  const request = new AbortController(); downloadRequest = request;
+  const version = sourceVersion;
+  $('source-error').hidden = true;
+  $<HTMLButtonElement>('youtube-download').disabled = true;
+  $('youtube-download').textContent = 'Henter …';
+  $('download-progress').hidden = false;
+  try {
+    const response = await fetch('/api/youtube-audio', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }), signal: request.signal,
+    });
+    const info = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(info?.error || 'Lydhenting krever den lokale serveren. Start appen med npm run dev.');
+    if (info?.id !== id || typeof info.title !== 'string' || info.url !== `/api/youtube-audio/${id}.mp3`) throw new Error('Serveren returnerte en ugyldig lydadresse. Prøv igjen.');
+    const audioResponse = await fetch(info.url, { signal: request.signal });
+    if (!audioResponse.ok) throw new Error('Lydfilen kunne ikke åpnes. Prøv å hente den på nytt.');
+    const blob = await audioResponse.blob();
+    if (!blob.size) throw new Error('Lydfilen er tom. Prøv en annen video.');
+    if (downloadRequest !== request || version !== sourceVersion) return;
+    await openFile(new File([blob], `${id}.mp3`, { type: 'audio/mpeg' }), info);
+  } catch (error) {
+    if (request.signal.aborted || downloadRequest !== request || version !== sourceVersion) return;
+    $('source-error').textContent = error instanceof Error ? error.message : 'Lyden kunne ikke hentes. Prøv igjen.';
+    $('source-error').hidden = false;
+  } finally { if (downloadRequest === request) cancelDownload(); }
 }
 async function openYoutube(id: string) {
   const version = resetSource('youtube', `yt:${id}`, 'YouTube-opptak', 'Video · Fra YouTube');
@@ -517,8 +553,15 @@ $('youtube-form').addEventListener('submit', event => {
   event.preventDefault();
   const id = youtubeId($<HTMLInputElement>('youtube-url').value);
   if (!id) { $('source-error').textContent = 'Bruk en lenke til en YouTube-video. Spotify og spillelister støttes ikke her.'; $('source-error').hidden = false; return; }
+  void downloadYoutube(id);
+});
+$('youtube-stream').addEventListener('click', () => {
+  const id = youtubeId($<HTMLInputElement>('youtube-url').value);
+  if (!id) { $('source-error').textContent = 'Bruk en lenke til en YouTube-video.'; $('source-error').hidden = false; return; }
   void openYoutube(id);
 });
+$('download-cancel').addEventListener('click', cancelDownload);
+$('source-dialog').addEventListener('close', cancelDownload);
 $<HTMLInputElement>('audio-file').addEventListener('change', event => {
   const input = event.target as HTMLInputElement; const file = input.files?.[0]; if (file) void openFile(file); input.value = '';
 });
