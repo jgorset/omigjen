@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import path from 'node:path';
 
-test('public hosting imports and retains audio without a YouTube backend', async ({ page, request }) => {
+test('public hosting still imports and retains local audio', async ({ page, request }) => {
   const origin = 'https://omigjen.johannesgorset.com';
   let apiRequests = 0;
   await page.route(`${origin}/**`, async route => {
@@ -12,9 +12,9 @@ test('public hosting imports and retains audio without a YouTube backend', async
   await page.goto(origin);
   await expect(page.getByRole('button', { name: 'Spill', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: 'Åpne en låt' }).click();
-  await expect(page.getByRole('textbox', { name: 'YouTube-lenke' })).toBeHidden();
-  await expect(page.getByRole('button', { name: 'Hent lyd', exact: true })).toBeHidden();
-  await expect(page.locator('.or-divider')).toBeHidden();
+  await expect(page.getByRole('textbox', { name: 'YouTube-lenke' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Hent lyd', exact: true })).toBeVisible();
+  await expect(page.locator('.or-divider')).toBeVisible();
   await page.locator('#audio-file').setInputFiles(path.resolve('public/ovingsmelodi.wav'));
   await expect(page.getByRole('button', { name: 'Spill', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: '75 %', exact: true }).click();

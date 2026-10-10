@@ -12,6 +12,28 @@ async function mockAudio(page: Page) {
   await page.route(`**${info.url}`, route => route.fulfill({ path: path.resolve('public/ovingsmelodi.wav'), contentType: 'audio/wav' }));
 }
 
+test('hosted pending imports finish, save their audio, and restore without another import', async ({ page }) => {
+  let imports = 0; let polls = 0;
+  await page.route('**/api/youtube-audio', route => { imports++; return route.fulfill({ status: 202, json: { id, pending: true } }); });
+  await page.route(`**/api/youtube-audio/${id}`, route => ++polls === 1
+    ? route.fulfill({ status: 202, json: { id, pending: true } }) : route.fulfill({ json: info }));
+  await mockAudio(page);
+  await page.goto('/');
+  await openDownload(page);
+  await expect(page.getByRole('heading', { name: info.title })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Spill', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Lagre økt', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Navn på økten' }).fill('Fra YouTube');
+  await page.getByRole('button', { name: 'Lagre økten', exact: true }).click();
+  await expect(page.locator('#session-save-dialog')).toBeHidden();
+  await page.reload();
+  await page.getByRole('button', { name: 'Mine økter', exact: true }).click();
+  await page.locator('.session-button').filter({ hasText: 'Fra YouTube' }).click();
+  await expect(page.locator('#playback-status')).toContainText('Økten er klar');
+  expect(await page.locator('audio').evaluate((audio: HTMLAudioElement) => audio.src.startsWith('blob:'))).toBe(true);
+  expect(imports).toBe(1); expect(polls).toBe(2);
+});
+
 test('downloaded audio plays locally, preserves pitch, loops, and restores YouTube phrases', async ({ page }) => {
   const youtubeRequests: string[] = [];
   page.on('request', request => { if (/^https:\/\/(?:www\.)?youtube\.com\//.test(request.url())) youtubeRequests.push(request.url()); });
@@ -52,6 +74,39 @@ test('download failures show a retryable error without replacing the current tun
   await expect(page.getByRole('heading', { name: info.title })).toBeVisible();
   expect(attempts).toBe(2);
 });
+
+test('network failure shows a readable message and keeps the current tune', async ({ page }) => {
+  await page.route('**/api/youtube-audio', route => route.abort('failed'));
+  await page.goto('/');
+  await openDownload(page);
+  await expect(page.locator('#source-error')).toContainText('Sjekk nettforbindelsen');
+  await expect(page.getByRole('button', { name: 'Hent lyd', exact: true })).toBeEnabled();
+  expect(await page.locator('#song-title').textContent()).toBe('En liten runddans');
+});
+
+for (const stage of ['start', 'poll', 'audio'] as const) {
+  test(`quota and temporary limits at ${stage} keep the current tune and allow retry`, async ({ page }) => {
+    let status = 503;
+    const quota = 'Den felles kvoten for lydhenting er brukt opp. Du kan fortsatt åpne lydfiler og lagrede økter.';
+    const busy = 'Flere henter lyd akkurat nå. Prøv igjen om litt.';
+    const failure = () => ({ status, json: { error: status === 503 ? quota : busy } });
+    await page.route('**/api/youtube-audio', route => route.fulfill(stage === 'start' ? failure()
+      : stage === 'poll' ? { status: 202, json: { id, pending: true } } : { json: info }));
+    await page.route(`**/api/youtube-audio/${id}`, route => route.fulfill(failure()));
+    await page.route(`**${info.url}`, route => route.fulfill(failure()));
+    await page.goto('/');
+    await openDownload(page);
+    await expect(page.locator('#source-error')).toHaveText(quota);
+    await expect(page.locator('#download-progress')).toBeHidden();
+    await expect(page.getByRole('button', { name: 'Hent lyd', exact: true })).toBeEnabled();
+    expect(await page.locator('#song-title').textContent()).toBe('En liten runddans');
+    status = 429;
+    await page.getByRole('button', { name: 'Hent lyd', exact: true }).click();
+    await expect(page.locator('#source-error')).toHaveText(busy);
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('button', { name: 'Spill', exact: true })).toBeEnabled();
+  });
+}
 
 test('closing the dialog cancels pending work so a late download cannot replace a newer source', async ({ page }) => {
   let finish!: () => void;

@@ -76,9 +76,9 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
   <dialog class="modal" id="source-dialog">
     <div class="modal-box source-modal">
       <div class="dialog-heading"><span class="eyebrow">FINN NOE Å ØVE PÅ</span><button class="btn close-dialog" aria-label="Lukk" data-close="source-dialog">${icon('x')}</button></div>
-      <h2>Din neste låt.</h2><p>${localDownloads ? 'Lim inn en YouTube-lenke, eller åpne en lydfil.' : 'Åpne en lydfil fra enheten din.'}</p>
-      <form id="youtube-form" ${localDownloads ? '' : 'hidden'}><label for="youtube-url">YouTube-lenke</label><div class="url-row"><input class="input" id="youtube-url" type="url" placeholder="https://www.youtube.com/watch?v=…" required /><button class="btn" id="youtube-download" type="submit">Hent lyd ${icon('download-simple')}</button></div><p class="source-disclosure">Lyden hentes én gang og lagres på denne enheten for senere øving.</p><div id="download-progress" hidden><p class="source-disclosure" role="status">Henter lyd … Første gang kan det ta litt tid.</p><button class="btn btn-sm btn-ghost" id="download-cancel" type="button">Avbryt</button></div><p class="form-error" id="source-error" role="alert" hidden></p></form>
-      <div class="or-divider" ${localDownloads ? '' : 'hidden'}><span>eller fra enheten din</span></div>
+      <h2>Din neste låt.</h2><p>Lim inn en YouTube-lenke, eller åpne en lydfil.</p>
+      <form id="youtube-form"><label for="youtube-url">YouTube-lenke</label><div class="url-row"><input class="input" id="youtube-url" type="url" placeholder="https://www.youtube.com/watch?v=…" required /><button class="btn" id="youtube-download" type="submit">Hent lyd ${icon('download-simple')}</button></div><p class="source-disclosure">${localDownloads ? 'Lyden hentes av den lokale serveren.' : 'Lyden hentes via Apify, som mellomlagrer den i opptil sju dager.'} Lagre økten for å beholde lyden på denne enheten.</p><div id="download-progress" hidden><p class="source-disclosure" role="status">Henter lyd … Første gang kan det ta litt tid.</p><button class="btn btn-sm btn-ghost" id="download-cancel" type="button">Avbryt</button></div><p class="form-error" id="source-error" role="alert" hidden></p></form>
+      <div class="or-divider"><span>eller fra enheten din</span></div>
       <label class="file-drop" id="file-drop" for="audio-file">${icon('upload-simple')}<strong>Velg en lydfil</strong><span>eller slipp den her</span><small>MP3, WAV, M4A, OGG og FLAC hvis nettleseren støtter det</small><input id="audio-file" type="file" accept="audio/*,.m4a,.flac,.ogg,.wav,.mp3" /></label>
       <p class="file-privacy">${icon('lock-simple')} Lydfilen blir på enheten din.</p>
       <button class="btn demo-button" id="load-demo">${icon('music-notes-simple')} Prøv med øvingsmelodien</button>
@@ -466,21 +466,30 @@ async function downloadYoutube(id: string) {
   $('youtube-download').textContent = 'Henter …';
   $('download-progress').hidden = false;
   try {
-    const response = await fetch('/api/youtube-audio', {
+    let response = await fetch('/api/youtube-audio', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }), signal: request.signal,
     });
+    const startedAt = Date.now();
+    while (response.status === 202) {
+      if (Date.now() - startedAt > 330000) throw new Error('Lydhentingen tok for lang tid. Prøv igjen.');
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      response = await fetch(`/api/youtube-audio/${id}`, { signal: request.signal });
+    }
     const info = await response.json().catch(() => null);
-    if (!response.ok) throw new Error(info?.error || 'Lydhenting krever den lokale serveren. Start appen med npm run dev.');
+    if (!response.ok) throw new Error(info?.error || 'Lyden kunne ikke hentes. Prøv igjen om litt, eller åpne en lydfil.');
     if (info?.id !== id || typeof info.title !== 'string' || info.url !== `/api/youtube-audio/${id}.mp3`) throw new Error('Serveren returnerte en ugyldig lydadresse. Prøv igjen.');
     const audioResponse = await fetch(info.url, { signal: request.signal });
-    if (!audioResponse.ok) throw new Error('Lydfilen kunne ikke åpnes. Prøv å hente den på nytt.');
+    if (!audioResponse.ok) {
+      const error = await audioResponse.json().catch(() => null) as { error?: string } | null;
+      throw new Error(error?.error || 'Lydfilen kunne ikke åpnes. Prøv å hente den på nytt.');
+    }
     const blob = await audioResponse.blob();
     if (!blob.size) throw new Error('Lydfilen er tom. Prøv en annen video.');
     if (downloadRequest !== request || version !== sourceVersion) return;
     await openFile(new File([blob], `${id}.mp3`, { type: 'audio/mpeg' }), info);
   } catch (error) {
     if (request.signal.aborted || downloadRequest !== request || version !== sourceVersion) return;
-    $('source-error').textContent = error instanceof Error ? error.message : 'Lyden kunne ikke hentes. Prøv igjen.';
+    $('source-error').textContent = error instanceof TypeError ? 'Lyden kunne ikke hentes. Sjekk nettforbindelsen og prøv igjen.' : error instanceof Error ? error.message : 'Lyden kunne ikke hentes. Prøv igjen.';
     $('source-error').hidden = false;
   } finally { if (downloadRequest === request) cancelDownload(); }
 }
@@ -563,7 +572,6 @@ $('help-open').addEventListener('click', () => $<HTMLDialogElement>('help-dialog
 document.querySelectorAll<HTMLButtonElement>('[data-close]').forEach(button => button.addEventListener('click', () => $<HTMLDialogElement>(button.dataset.close!).close()));
 $('youtube-form').addEventListener('submit', event => {
   event.preventDefault();
-  if (!localDownloads) return;
   const id = youtubeId($<HTMLInputElement>('youtube-url').value);
   if (!id) { $('source-error').textContent = 'Bruk en lenke til en YouTube-video. Spotify og spillelister støttes ikke her.'; $('source-error').hidden = false; return; }
   void downloadYoutube(id);

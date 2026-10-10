@@ -15,13 +15,15 @@
     "test:browser": "playwright test"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "5.20261010.1",
     "@playwright/test": "^1.63.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.6.4",
     "daisyui": "^5.7.47",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
-    "vite": "^8.3.2"
+    "vite": "^8.3.2",
+    "wrangler": "4.149.0"
   },
   "dependencies": {
     "@phosphor-icons/web": "^2.1.2"

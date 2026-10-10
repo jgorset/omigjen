@@ -1,0 +1,11 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "omigjen",
+  "pages_build_output_dir": "dist",
+  "compatibility_date": "2026-10-10",
+  "d1_databases": [{
+    "binding": "IMPORTS",
+    "database_name": "omigjen-imports",
+    "database_id": "f8cd579f-628a-468a-a552-163cc382cb98"
+  }]
+}
